@@ -108,34 +108,41 @@ class Hiera
           end
         end
 
-        config = load_data("/etc/puppet/hiera.yaml")
-        config[:hierarchy].insert(0, order_override) if order_override
-        config[:hierarchy].each do |source|
-          source = File.join("%s" % Backend.parse_string(config[:yaml][:datadir], scope), "%s.yaml" % Backend.parse_string(source, scope))
-
-          Hiera.debug("Looking for data in source %s" % source)
-          data = load_data(source)
-
-          raise("Data loaded from %s should be a hash but got %s" % [source, data.class]) unless data.is_a?(Hash)
+        if answer.kind_of? Hash
+          resolution_type = :hash
+        end
+        Backend.datasourcefiles(:yaml, scope, "yaml", order_override) do |source, yamlfile|
+          data = @cache.read_file(yamlfile, Hash) do |data|
+            YAML.load(data) || {}
+          end
 
           next if data.empty?
           next unless data.include?(key)
-          found  = true
 
+          # Extra logging that we found the key. This can be outputted
+          # multiple times if the resolution type is array or hash but that
+          # should be expected as the logging will then tell the user ALL the
+          # places where the key is found.
+          Hiera.debug("Found #{key} in #{source}")
+
+          # for array resolution we just append to the array whatever
+          # we find, we then goes onto the next file and keep adding to
+          # the array
+          #
+          # for priority searches we break after the first found data item
           new_answer = Backend.parse_answer(data[key], scope)
           case resolution_type
-            when :array
-              raise("Hiera type mismatch: expected Array and got %s" % new_answer.class) unless (new_answer.kind_of?(Array) || new_answer.kind_of?(String))
-              answer ||= []
-              answer << new_answer
-
-            when :hash
-              raise("Hiera type mismatch: expected Hash and got %s" % new_answer.class) unless new_answer.kind_of?(Hash)
-              answer ||= {}
-              answer = Backend.merge_answer(new_answer, answer)
-            else
-              answer = new_answer
-              break
+          when :array
+            raise Exception, "Hiera type mismatch: expected Array and got #{new_answer.class}" unless new_answer.kind_of? Array or new_answer.kind_of? String
+            answer ||= []
+            answer << new_answer
+          when :hash
+            raise Exception, "Hiera type mismatch: expected Hash and got #{new_answer.class}" unless new_answer.kind_of? Hash
+            answer ||= {}
+            answer = Backend.merge_answer(answer,new_answer)
+          else
+            answer = new_answer
+            break
           end
         end
 

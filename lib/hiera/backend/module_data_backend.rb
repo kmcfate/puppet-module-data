@@ -72,6 +72,38 @@ class Hiera
           return no_answer
         end
 
+        config = load_data("/etc/puppet/hiera.yaml")
+
+        config[:hierarchy].insert(0, order_override) if order_override
+        config[:hierarchy].each do |source|
+          source = File.join(config["yaml"][:datadir], "%s.yaml" % Backend.parse_string(source, scope))
+
+          Hiera.debug("Looking for data in source %s" % source)
+          data = load_data(source)
+
+          raise("Data loaded from %s should be a hash but got %s" % [source, data.class]) unless data.is_a?(Hash)
+
+          next if data.empty?
+          next unless data.include?(key)
+          found  = true
+
+          new_answer = Backend.parse_answer(data[key], scope)
+          case resolution_type
+            when :array
+              raise("Hiera type mismatch: expected Array and got %s" % new_answer.class) unless (new_answer.kind_of?(Array) || new_answer.kind_of?(String))
+              answer ||= []
+              answer << new_answer
+
+            when :hash
+              raise("Hiera type mismatch: expected Hash and got %s" % new_answer.class) unless new_answer.kind_of?(Hash)
+              answer ||= {}
+              answer = Backend.merge_answer(new_answer, answer)
+            else
+              answer = new_answer
+              break
+          end
+        end
+
         config = load_module_config(scope["module_name"], scope["::environment"])
         unless config["path"]
           Hiera.debug("Could not find a path to the module '%s' in environment '%s'" % [scope["module_name"], scope["::environment"]])

@@ -72,11 +72,15 @@ class Hiera
           return no_answer
         end
 
-        config = load_data("/etc/puppet/hiera.yaml")
+        config = load_module_config(scope["module_name"], scope["::environment"])
+        unless config["path"]
+          Hiera.debug("Could not find a path to the module '%s' in environment '%s'" % [scope["module_name"], scope["::environment"]])
+          return no_answer
+        end
 
         config[:hierarchy].insert(0, order_override) if order_override
         config[:hierarchy].each do |source|
-          source = File.join(config["yaml"][:datadir], "%s.yaml" % Backend.parse_string(source, scope))
+          source = File.join(config["path"], "data", "%s.yaml" % Backend.parse_string(source, scope))
 
           Hiera.debug("Looking for data in source %s" % source)
           data = load_data(source)
@@ -104,15 +108,10 @@ class Hiera
           end
         end
 
-        config = load_module_config(scope["module_name"], scope["::environment"])
-        unless config["path"]
-          Hiera.debug("Could not find a path to the module '%s' in environment '%s'" % [scope["module_name"], scope["::environment"]])
-          return no_answer
-        end
-
+        config = load_data("/etc/puppet/hiera.yaml")
         config[:hierarchy].insert(0, order_override) if order_override
         config[:hierarchy].each do |source|
-          source = File.join(config["path"], "data", "%s.yaml" % Backend.parse_string(source, scope))
+          source = File.join("%s" % Backend.parse_string(config[:yaml][:datadir], scope), "%s.yaml" % Backend.parse_string(source, scope))
 
           Hiera.debug("Looking for data in source %s" % source)
           data = load_data(source)
